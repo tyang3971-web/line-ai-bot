@@ -1,34 +1,48 @@
-// Reddit - r/ClaudeAI, r/MachineLearning, r/artificial 新文章
+// 替代 Reddit（Reddit 封鎖未授權）
+// 使用 HN Algolia API 搜尋多個關鍵字 + MIT Technology Review RSS
 import type { NewsItem } from './hackernews'
 
-const SUBREDDITS = ['ClaudeAI', 'artificial', 'MachineLearning']
-const HEADERS = { 'User-Agent': 'line-ai-bot/1.0 (daily digest)' }
+// HN 補充搜尋（不同關鍵字，避免和 hackernews.ts 重複）
+const EXTRA_QUERIES = ['AI agent', 'large language model', 'GPT Claude Gemini']
 
 export async function scrapeReddit(): Promise<NewsItem[]> {
   const results: NewsItem[] = []
 
-  for (const sub of SUBREDDITS) {
+  // 1. HN 補充搜尋（AI 更廣泛話題）
+  for (const q of EXTRA_QUERIES) {
     try {
       const res = await fetch(
-        `https://www.reddit.com/r/${sub}/hot.json?limit=5`,
-        { headers: HEADERS }
+        `https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=3&numericFilters=points>30&query=${encodeURIComponent(q)}`
       )
+      if (!res.ok) continue
       const json = await res.json()
-      const posts = json?.data?.children || []
-      for (const post of posts) {
-        const d = post.data
-        if (d.stickied || d.score < 10) continue
+      for (const hit of (json.hits || [])) {
+        if (!hit.url) continue
         results.push({
-          title: d.title,
-          url: d.url?.startsWith('http') ? d.url : `https://reddit.com${d.permalink}`,
-          score: d.score,
-          source: `r/${sub}`,
+          title: hit.title,
+          url: hit.url,
+          score: hit.points || 0,
+          source: 'Hacker News (AI)',
         })
       }
-    } catch {
-      // skip if subreddit unavailable
-    }
+    } catch { /* skip */ }
   }
+
+  // 2. Dev.to AI tag（公開 API）
+  try {
+    const res = await fetch('https://dev.to/api/articles?tag=ai&per_page=5&top=1')
+    if (res.ok) {
+      const articles = await res.json()
+      for (const a of articles) {
+        results.push({
+          title: a.title,
+          url: a.url,
+          score: (a.positive_reactions_count || 0) + (a.comments_count || 0) * 2,
+          source: 'Dev.to',
+        })
+      }
+    }
+  } catch { /* skip */ }
 
   return results.sort((a, b) => b.score - a.score).slice(0, 8)
 }

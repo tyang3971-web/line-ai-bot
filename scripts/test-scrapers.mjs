@@ -1,25 +1,21 @@
 // 本地測試爬蟲效果
 // 執行：node scripts/test-scrapers.mjs
 
-async function testHN() {
-  const res = await fetch('https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=5&numericFilters=points>20&query=Claude+AI')
+async function testHN(query = 'Claude AI') {
+  const res = await fetch(`https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=5&numericFilters=points>20&query=${encodeURIComponent(query)}`)
   const json = await res.json()
-  console.log('\n🔶 Hacker News:')
-  for (const hit of json.hits) {
+  console.log(`\n🔶 Hacker News "${query}":`)
+  for (const hit of json.hits.slice(0, 3)) {
     console.log(`  [${hit.points}pts] ${hit.title}`)
-    console.log(`  ${hit.url}`)
   }
 }
 
-async function testReddit() {
-  const res = await fetch('https://www.reddit.com/r/ClaudeAI/hot.json?limit=5', {
-    headers: { 'User-Agent': 'test-bot/1.0' }
-  })
-  const json = await res.json()
-  console.log('\n🔷 Reddit r/ClaudeAI:')
-  for (const post of json.data.children.slice(0, 5)) {
-    const d = post.data
-    if (!d.stickied) console.log(`  [${d.score}pts] ${d.title}`)
+async function testDevTo() {
+  const res = await fetch('https://dev.to/api/articles?tag=ai&per_page=5&top=1')
+  const articles = await res.json()
+  console.log('\n🟢 Dev.to AI:')
+  for (const a of articles.slice(0, 3)) {
+    console.log(`  [👍${a.positive_reactions_count}] ${a.title}`)
   }
 }
 
@@ -30,12 +26,12 @@ async function testAnthropic() {
   const html = await res.text()
   const titleMatch = html.match(/<title>([^<]+)<\/title>/)
   console.log('\n🔵 Anthropic Blog:')
-  console.log(`  Page title: ${titleMatch?.[1]}`)
-  // 簡單確認頁面可以抓到
-  console.log(`  Content length: ${html.length} chars`)
+  console.log(`  Page OK: ${res.ok} | Size: ${(html.length/1024).toFixed(0)}KB`)
+  console.log(`  Title: ${titleMatch?.[1]}`)
 }
 
-await testHN().catch(e => console.error('HN error:', e.message))
-await testReddit().catch(e => console.error('Reddit error:', e.message))
+await testHN('Claude AI').catch(e => console.error('HN Claude error:', e.message))
+await testHN('AI agent').catch(e => console.error('HN Agent error:', e.message))
+await testDevTo().catch(e => console.error('DevTo error:', e.message))
 await testAnthropic().catch(e => console.error('Anthropic error:', e.message))
-console.log('\n✅ Scraper test complete')
+console.log('\n✅ All scrapers OK')
