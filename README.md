@@ -1,40 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+# LINE AI Bot — 記帳 + 每日AI新聞摘要
 
-## Getting Started
+## 功能
+- 📊 **LINE 記帳機器人** — 說「午餐 150」自動記帳，「本月」查統計
+- 📰 **每日 AI 新聞** — 每天 18:00 自動爬取 HN + Reddit + Anthropic，Claude Haiku 摘要後寄到你的 Email
+- 🤖 **LINE 查詢** — 在 LINE 說「今日新聞」即時取得 AI 摘要
 
-First, run the development server:
+## 部署步驟
 
+### 1. LINE Bot 設定
+1. 前往 https://developers.line.biz/
+2. 建立新 Provider → 建立 Messaging API Channel
+3. 取得 `Channel Secret` 和 `Channel Access Token`（Long-lived）
+4. Webhook URL 設為：`https://你的vercel域名/api/line/webhook`
+
+### 2. Gmail App Password
+1. Google 帳號 → 安全性 → 兩步驟驗證（開啟）
+2. 安全性 → 應用程式密碼 → 生成16碼密碼
+3. 填入 `GMAIL_APP_PASS`
+
+### 3. Supabase 建表
+在 Supabase SQL Editor 執行：`scripts/setup-expenses-table.sql`
+
+### 4. 部署到 Vercel
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local   # 填入所有變數
+vercel deploy --prod
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 5. 設定 Vercel 環境變數
+在 Vercel Dashboard → Settings → Environment Variables 加入所有 .env.example 的變數
 
-You can start editing the page by modifying `pages/index.tsx`. The page auto-updates as you edit the file.
+### 6. 測試
+```bash
+# 測試爬蟲（不需要任何 key）
+node scripts/test-scrapers.mjs
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.ts`.
+# 本地啟動
+npm run dev
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
+# 手動觸發每日摘要（需設好環境變數）
+curl -X GET http://localhost:3000/api/cron/daily \
+  -H "Authorization: Bearer your-cron-secret"
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## LINE Bot 指令
+| 輸入 | 功能 |
+|------|------|
+| 午餐 120 | 記帳：餐飲 $120 |
+| 搭捷運 35 | 記帳：交通 $35 |
+| 本月 | 本月支出統計 |
+| 本週 | 近7天支出明細 |
+| 今日新聞 | 即時 AI 新聞摘要 |
+| 幫助 | 查看說明 |
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+## 成本估算（月）
+- Claude Haiku（每日摘要 ~1500 tokens + 記帳解析 ~200 tokens × N 筆）
+  - 30天摘要：$0.03
+  - 記帳解析 100 筆/月：$0.01
+  - **合計：< $0.05/月** 💪
+- Vercel Hobby（Cron 免費）
+- Gmail SMTP（免費）
+- **總成本：幾乎 $0**
