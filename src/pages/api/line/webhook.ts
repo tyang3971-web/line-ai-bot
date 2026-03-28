@@ -11,11 +11,11 @@ import { scrapeHackerNews } from '@/lib/scrapers/hackernews'
 import { scrapeReddit } from '@/lib/scrapers/reddit'
 import { summarizeNews } from '@/lib/summarizer'
 
-const config = {
+const lineConfig = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN!,
   channelSecret: process.env.LINE_CHANNEL_SECRET!,
 }
-const client = new Client(config)
+const client = new Client(lineConfig)
 
 // 關鍵字指令
 const COMMANDS = {
@@ -138,7 +138,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const signature = req.headers['x-line-signature'] as string
   const body = JSON.stringify(req.body)
 
-  if (!validateSignature(body, config.channelSecret, signature)) {
+  if (!validateSignature(body, lineConfig.channelSecret, signature)) {
     return res.status(401).json({ error: 'Invalid signature' })
   }
 
