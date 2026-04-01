@@ -51,7 +51,8 @@ export async function parseExpense(text: string): Promise<{
   // 支援全形空格、多空格、各種分隔
   const cleaned = text.replace(/[\u3000\u00A0]/g, ' ').replace(/\s+/g, ' ').trim()
   console.log('cleaned text:', JSON.stringify(cleaned))
-  const match = cleaned.match(/^(.+?)\s+(\d+)\s*(.*)$/)
+  // 支援「午餐 150」和「午餐150」（有無空格都行）
+  const match = cleaned.match(/^(.+?)\s*(\d+)\s*(.*)$/)
   if (match) {
     const desc = match[1].trim()
     const amount = parseInt(match[2])
