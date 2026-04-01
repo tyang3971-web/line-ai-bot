@@ -112,32 +112,46 @@ async function handleMessage(event: WebhookEvent) {
     }
   }
 
-  // 用 Gemini AI 理解用戶意圖
+  // Gemini AI 全能助理
   console.log('Input:', text)
+  const now = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   const aiResp = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: `你是 LINE 記帳助理。根據用戶訊息判斷意圖並回傳 JSON。
+        contents: [{ parts: [{ text: `你是 Tina 的 LINE 私人助理「小幫手」。你很聰明、有溫度、反應快。現在時間：${now}（台灣時間）。
 
 用戶訊息：「${text}」
 
-判斷規則：
-1. 如果是記帳（提到金額/花費）→ {"type":"expense","amount":數字,"category":"餐飲/交通/購物/娛樂/訂閱/帳單/其他","description":"說明10字內"}
-2. 如果是備註/提醒（沒有金額但要記錄）→ {"type":"note","content":"整理後的備註內容","category":"分類"}
-3. 如果是問題/聊天 → {"type":"chat","reply":"用繁體中文簡短回答，50字內"}
-4. 如果是查詢記帳 → {"type":"query","period":"本月/本週"}
+根據意圖回傳 JSON（只輸出JSON）：
 
-只輸出 JSON，不要其他文字。
+1. 記帳（提到金額/花費/元/塊/$）
+→ {"type":"expense","amount":數字,"category":"餐飲/交通/購物/娛樂/訂閱/帳單/生活/其他","description":"說明15字內"}
+
+2. 設定提醒（提到幾點/明天/下午/提醒我）
+→ {"type":"reminder","time":"ISO 8601 格式 台灣時間","message":"提醒內容"}
+例："下午3點提醒我開會" → {"type":"reminder","time":"2026-04-02T15:00:00+08:00","message":"開會"}
+例："明天早上9點提醒我寄email" → {"type":"reminder","time":"2026-04-03T09:00:00+08:00","message":"寄email"}
+
+3. 備註/記錄（要記住某事但不是花費）
+→ {"type":"note","content":"整理後的內容","category":"分類"}
+
+4. 查詢記帳
+→ {"type":"query","period":"本月/本週"}
+
+5. 一般問題/聊天/任何其他
+→ {"type":"chat","reply":"用繁體中文回答，像聰明的私人助理一樣。簡潔有用，最多100字。可以給建議、回答問題、閒聊。"}
 
 範例：
 "午餐150" → {"type":"expense","amount":150,"category":"餐飲","description":"午餐"}
-"請幫我把tyang3971寫入備注，並分類為專案成本" → {"type":"note","content":"tyang3971 帳號","category":"專案成本"}
-"今天天氣如何" → {"type":"chat","reply":"我是記帳助理，天氣的部分我不太確定，但我可以幫你記帳喔！"}
-"本月" → {"type":"query","period":"本月"}` }] }],
-        generationConfig: { temperature: 0 }
+"Gemini帳號55元 信用卡" → {"type":"expense","amount":55,"category":"訂閱","description":"Gemini帳號費用"}
+"5點半提醒我去接小孩" → {"type":"reminder","time":"2026-04-02T17:30:00+08:00","message":"去接小孩"}
+"幫我記一下tyang3971分類為專案成本" → {"type":"note","content":"tyang3971","category":"專案成本"}
+"今天適合帶寶寶出門嗎" → {"type":"chat","reply":"建議先查一下天氣預報喔！如果沒下雨的話，下午4點後比較涼爽適合帶寶寶出門散步 🌤"}
+"謝謝" → {"type":"chat","reply":"不客氣！有需要隨時找我 😊"}` }] }],
+        generationConfig: { temperature: 0.3 }
       }),
     }
   )
@@ -159,6 +173,28 @@ async function handleMessage(event: WebhookEvent) {
       type: 'text',
       text: `✅ 已記帳！\n${parsed.category} | ${parsed.description}\n💰 $${Number(parsed.amount).toLocaleString()}\n\n輸入「本月」查看統計`,
     } as TextMessage)
+  } else if (parsed.type === 'reminder' && parsed.time && parsed.message) {
+    // 存提醒到 Supabase
+    try {
+      const { createClient } = await import('@supabase/supabase-js')
+      const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!)
+      await sb.from('reminders').insert({
+        user_id: userId,
+        message: String(parsed.message),
+        remind_at: String(parsed.time),
+      })
+      const timeStr = new Date(String(parsed.time)).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      await client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: `⏰ 提醒已設定！\n時間：${timeStr}\n內容：${parsed.message}\n\n到時候我會提醒你 👍`,
+      } as TextMessage)
+    } catch (e) {
+      console.error('Reminder save error:', e)
+      await client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: `⚠️ 提醒設定失敗，請稍後再試`,
+      } as TextMessage)
+    }
   } else if (parsed.type === 'note') {
     // 備註也存到記帳（金額 0），方便查看
     await saveExpense({
