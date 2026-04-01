@@ -132,27 +132,40 @@ async function handleMessage(event: WebhookEvent) {
   }
 }
 
+// 手動讀 raw body
+async function getRawBody(req: NextApiRequest): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = ''
+    req.on('data', (chunk) => { data += chunk })
+    req.on('end', () => resolve(data))
+    req.on('error', reject)
+  })
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end()
 
+  const rawBody = await getRawBody(req)
   const signature = req.headers['x-line-signature'] as string
-  const body = JSON.stringify(req.body)
+  const body = JSON.parse(rawBody)
 
   // LINE Verify 或空 events 直接回 200
-  if (!req.body.events || req.body.events.length === 0) {
+  if (!body.events || body.events.length === 0) {
     return res.status(200).json({ ok: true })
   }
 
-  if (!validateSignature(body, lineConfig.channelSecret, signature)) {
+  if (!validateSignature(rawBody, lineConfig.channelSecret, signature)) {
+    console.error('Signature validation failed')
     return res.status(401).json({ error: 'Invalid signature' })
   }
 
-  const events: WebhookEvent[] = req.body.events
+  const events: WebhookEvent[] = body.events
   await Promise.all(events.map(handleMessage))
 
   res.status(200).json({ ok: true })
 }
 
+// 關閉 Next.js 內建 bodyParser，手動讀 raw body 做 signature 驗證
 export const config = {
-  api: { bodyParser: true },  // LINE SDK reads req.body directly
+  api: { bodyParser: false },
 }
