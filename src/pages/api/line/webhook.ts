@@ -96,6 +96,7 @@ async function handleNews(userId: string): Promise<string> {
 
 async function handleMessage(event: WebhookEvent) {
   if (event.type !== 'message' || event.message.type !== 'text') return
+  try {
   const userId = event.source.userId!
   const text = event.message.text.trim()
 
@@ -112,7 +113,9 @@ async function handleMessage(event: WebhookEvent) {
   }
 
   // 嘗試解析記帳
+  console.log('Parsing:', text)
   const expense = await parseExpense(text)
+  console.log('Parsed:', JSON.stringify(expense))
   if (expense) {
     await saveExpense({
       user_id: userId,
@@ -129,6 +132,9 @@ async function handleMessage(event: WebhookEvent) {
       type: 'text',
       text: `💡 說明：\n記帳：「午餐 120」\n查詢：「本月」「本週」\n新聞：「今日新聞」\n\n輸入「幫助」查看完整說明`,
     } as TextMessage)
+  }
+  } catch (err) {
+    console.error('handleMessage error:', err)
   }
 }
 
