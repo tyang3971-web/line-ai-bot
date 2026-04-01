@@ -48,7 +48,10 @@ export async function parseExpense(text: string): Promise<{
   description: string
 } | null> {
   // 先用簡單 regex 嘗試解析（不消耗 API）
-  const match = text.match(/^(.+?)\s+(\d+)\s*(.*)$/)
+  // 支援全形空格、多空格、各種分隔
+  const cleaned = text.replace(/[\u3000\u00A0]/g, ' ').replace(/\s+/g, ' ').trim()
+  console.log('cleaned text:', JSON.stringify(cleaned))
+  const match = cleaned.match(/^(.+?)\s+(\d+)\s*(.*)$/)
   if (match) {
     const desc = match[1].trim()
     const amount = parseInt(match[2])
@@ -70,7 +73,7 @@ export async function parseExpense(text: string): Promise<{
   }
 
   // 也嘗試「數字在前」的格式：150 午餐
-  const match2 = text.match(/^(\d+)\s+(.+)$/)
+  const match2 = cleaned.match(/^(\d+)\s+(.+)$/)
   if (match2) {
     const amount = parseInt(match2[1])
     const desc = match2[2].trim()
