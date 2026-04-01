@@ -138,6 +138,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const signature = req.headers['x-line-signature'] as string
   const body = JSON.stringify(req.body)
 
+  // LINE Verify 或空 events 直接回 200
+  if (!req.body.events || req.body.events.length === 0) {
+    return res.status(200).json({ ok: true })
+  }
+
   if (!validateSignature(body, lineConfig.channelSecret, signature)) {
     return res.status(401).json({ error: 'Invalid signature' })
   }
