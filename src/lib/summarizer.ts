@@ -47,41 +47,44 @@ export async function parseExpense(text: string): Promise<{
   category: string
   description: string
 } | null> {
-  // 先用簡單 regex 嘗試解析（不消耗 API）
-  // 支援全形空格、多空格、各種分隔
-  const cleaned = text.replace(/[\u3000\u00A0]/g, ' ').replace(/\s+/g, ' ').trim()
-  console.log('cleaned text:', JSON.stringify(cleaned))
-  // 支援「午餐 150」和「午餐150」（有無空格都行）
-  const match = cleaned.match(/^(.+?)\s*(\d+)\s*(.*)$/)
-  if (match) {
-    const desc = match[1].trim()
-    const amount = parseInt(match[2])
-    const extra = match[3].trim()
-    if (amount > 0) {
-      // 簡單分類
-      const catMap: Record<string, string> = {
-        '早餐':'餐飲','午餐':'餐飲','晚餐':'餐飲','宵夜':'餐飲','咖啡':'餐飲','飲料':'餐飲','吃':'餐飲','喝':'餐飲','便當':'餐飲','麵':'餐飲','飯':'餐飲',
-        '捷運':'交通','公車':'交通','計程車':'交通','uber':'交通','油':'交通','停車':'交通','高鐵':'交通','火車':'交通','搭':'交通',
-        '買':'購物','衣':'購物','鞋':'購物','包':'購物',
-        '電影':'娛樂','遊戲':'娛樂','唱歌':'娛樂','KTV':'娛樂',
-      }
-      let category = extra || '其他'
-      for (const [kw, cat] of Object.entries(catMap)) {
-        if (desc.includes(kw)) { category = cat; break }
-      }
-      return { amount, category, description: desc }
-    }
-  }
+  // 用 Gemini AI 解析（免費，能處理任何格式）
+  try {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `從以下文字提取記帳資訊。只輸出JSON，不要其他文字。
 
-  // 也嘗試「數字在前」的格式：150 午餐
-  const match2 = cleaned.match(/^(\d+)\s+(.+)$/)
-  if (match2) {
-    const amount = parseInt(match2[1])
-    const desc = match2[2].trim()
-    if (amount > 0) {
-      return { amount, category: '其他', description: desc }
-    }
-  }
+"${text}"
 
-  return null
+規則：
+- amount: 實際花費金額（數字）。找「元」「塊」「$」前面的數字，或文中最合理的消費金額。注意：帳號ID中的數字不是金額。
+- category: 分類（餐飲/交通/購物/娛樂/訂閱/帳單/其他）
+- description: 簡短說明（10字內）
+
+如果不是記帳訊息，回傳 {"amount":0}
+
+範例：
+"午餐150" → {"amount":150,"category":"餐飲","description":"午餐"}
+"Gemini tyang3971帳號55元 信用卡" → {"amount":55,"category":"訂閱","description":"Gemini帳號"}
+"搭捷運35" → {"amount":35,"category":"交通","description":"搭捷運"}
+"星巴克 拿鐵 180" → {"amount":180,"category":"餐飲","description":"星巴克拿鐵"}` }] }],
+          generationConfig: { temperature: 0 }
+        }),
+      }
+    )
+    const data = await resp.json()
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
+    const jsonMatch = raw.match(/\{[^}]+\}/)
+    if (!jsonMatch) return null
+    const parsed = JSON.parse(jsonMatch[0])
+    console.log('Gemini parsed:', JSON.stringify(parsed))
+    if (!parsed.amount || parsed.amount <= 0) return null
+    return parsed
+  } catch (e) {
+    console.error('parseExpense error:', e)
+    return null
+  }
 }
