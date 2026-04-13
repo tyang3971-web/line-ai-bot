@@ -42,22 +42,7 @@ ${itemList}
   return message.content[0].type === 'text' ? message.content[0].text : ''
 }
 
-export async function parseExpense(text: string): Promise<{
-  amount: number
-  category: string
-  description: string
-} | null> {
-  // 用 Gemini AI 解析（免費，能處理任何格式）
-  try {
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: `從以下文字提取記帳資訊。只輸出JSON，不要其他文字。
-
-"${text}"
+const PARSE_PROMPT = `從以下文字提取記帳資訊。只輸出JSON，不要其他文字。
 
 規則：
 - amount: 實際花費金額（數字）。找「元」「塊」「$」前面的數字，或文中最合理的消費金額。注意：帳號ID中的數字不是金額。
@@ -70,21 +55,59 @@ export async function parseExpense(text: string): Promise<{
 "午餐150" → {"amount":150,"category":"餐飲","description":"午餐"}
 "Gemini tyang3971帳號55元 信用卡" → {"amount":55,"category":"訂閱","description":"Gemini帳號"}
 "搭捷運35" → {"amount":35,"category":"交通","description":"搭捷運"}
-"星巴克 拿鐵 180" → {"amount":180,"category":"餐飲","description":"星巴克拿鐵"}` }] }],
-          generationConfig: { temperature: 0 }
-        }),
-      }
-    )
-    const data = await resp.json()
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
+"星巴克 拿鐵 180" → {"amount":180,"category":"餐飲","description":"星巴克拿鐵"}`
+
+export async function parseExpense(text: string): Promise<{
+  amount: number
+  category: string
+  description: string
+} | null> {
+  const prompt = `${PARSE_PROMPT}\n\n"${text}"`
+
+  // 優先 Claude Haiku
+  try {
+    const message = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 200,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    const raw = message.content[0].type === 'text' ? message.content[0].text : '{}'
     const jsonMatch = raw.match(/\{[^}]+\}/)
     if (!jsonMatch) return null
     const parsed = JSON.parse(jsonMatch[0])
-    console.log('Gemini parsed:', JSON.stringify(parsed))
+    console.log('Claude parsed:', JSON.stringify(parsed))
     if (!parsed.amount || parsed.amount <= 0) return null
     return parsed
   } catch (e) {
-    console.error('parseExpense error:', e)
-    return null
+    console.error('Claude parseExpense failed, trying Gemini fallback:', e)
   }
+
+  // Fallback Gemini
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0 },
+          }),
+        }
+      )
+      const data = await resp.json()
+      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
+      const jsonMatch = raw.match(/\{[^}]+\}/)
+      if (!jsonMatch) return null
+      const parsed = JSON.parse(jsonMatch[0])
+      console.log('Gemini parsed:', JSON.stringify(parsed))
+      if (!parsed.amount || parsed.amount <= 0) return null
+      return parsed
+    } catch (e) {
+      console.error('Gemini parseExpense also failed:', e)
+    }
+  }
+
+  return null
 }

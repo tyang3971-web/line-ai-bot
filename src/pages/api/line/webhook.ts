@@ -112,16 +112,10 @@ async function handleMessage(event: WebhookEvent) {
     }
   }
 
-  // Gemini AI 全能助理
+  // Claude Haiku 全能助理（fallback Gemini）
   console.log('Input:', text)
   const now = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-  const aiResp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `你是 Tina 的 LINE 私人助理「小幫手」。你很聰明、有溫度、反應快。現在時間：${now}（台灣時間）。
+  const intentPrompt = `你是 Tina 的 LINE 私人助理「小幫手」。你很聰明、有溫度、反應快。現在時間：${now}（台灣時間）。
 
 用戶訊息：「${text}」
 
@@ -150,13 +144,43 @@ async function handleMessage(event: WebhookEvent) {
 "5點半提醒我去接小孩" → {"type":"reminder","time":"2026-04-02T17:30:00+08:00","message":"去接小孩"}
 "幫我記一下tyang3971分類為專案成本" → {"type":"note","content":"tyang3971","category":"專案成本"}
 "今天適合帶寶寶出門嗎" → {"type":"chat","reply":"建議先查一下天氣預報喔！如果沒下雨的話，下午4點後比較涼爽適合帶寶寶出門散步 🌤"}
-"謝謝" → {"type":"chat","reply":"不客氣！有需要隨時找我 😊"}` }] }],
-        generationConfig: { temperature: 0.3 }
-      }),
+"謝謝" → {"type":"chat","reply":"不客氣！有需要隨時找我 😊"}`
+
+  let raw = '{}'
+  // 優先 Claude Haiku
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const msg = await claude.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: intentPrompt }],
+    })
+    raw = msg.content[0].type === 'text' ? msg.content[0].text : '{}'
+    console.log('Claude intent:', raw)
+  } catch (e) {
+    console.error('Claude intent failed, trying Gemini:', e)
+    // Fallback Gemini
+    try {
+      const aiResp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: intentPrompt }] }],
+            generationConfig: { temperature: 0.3 },
+          }),
+        }
+      )
+      const aiData = await aiResp.json()
+      raw = aiData.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
+      console.log('Gemini intent:', raw)
+    } catch (e2) {
+      console.error('Gemini intent also failed:', e2)
     }
-  )
-  const aiData = await aiResp.json()
-  const raw = aiData.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
+  }
+
   const jsonMatch = raw.match(/\{[^}]*\}/)
   let parsed: Record<string, unknown> = {}
   try { parsed = JSON.parse(jsonMatch?.[0] || '{}') } catch {}
